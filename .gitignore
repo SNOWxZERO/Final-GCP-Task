@@ -1,0 +1,52 @@
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.vscode/
+.idea/
+*.iml
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pytest_cache/
+env/
+venv/
+ENV/
+
+# Node
+node_modules/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.tfstate.backup
+plan.out
+
+# GCP / credentials / keys
+*.json
+*.key
+service-account-*.json
+google_credentials.json
+app_default_credentials.json
+credentials
+
+# Logs and build artifacts
+*.log
+dist/
+build/
+
+# Misc
+.env
+output.txt

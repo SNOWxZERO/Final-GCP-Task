@@ -1,0 +1,14 @@
+artifact_registry_repository = "gad-final-task-docker-repo"
+artifact_registry_url = "us-central1-docker.pkg.dev/iti-project-476212/gad-final-task-docker-repo"
+connect_to_vm_command = "gcloud compute ssh gad-final-task-management-vm --zone=us-central1-a --tunnel-through-iap --project=iti-project-476212"
+get_gke_credentials_command = "gcloud container clusters get-credentials gad-final-task-gke-cluster --region=us-central1 --project=iti-project-476212 --internal-ip"
+gke_cluster_ca_certificate = <sensitive>
+gke_cluster_endpoint = <sensitive>
+gke_cluster_name = "gad-final-task-gke-cluster"
+gke_service_account_email = "gad-final-task-gke-sa@iti-project-476212.iam.gserviceaccount.com"
+management_subnet_name = "gad-final-task-management-subnet"
+management_vm_internal_ip = "10.0.1.2"
+management_vm_name = "gad-final-task-management-vm"
+restricted_subnet_name = "gad-final-task-restricted-subnet"
+vm_service_account_email = "gad-final-task-vm-sa@iti-project-476212.iam.gserviceaccount.com"
+vpc_name = "gad-final-task-vpc"
