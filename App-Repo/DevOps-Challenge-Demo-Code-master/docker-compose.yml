@@ -1,0 +1,21 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: demo_redis
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: demo_app
+    ports:
+      - "8888:8888"
+    environment:
+      - PORT=8888
+      - HOST=0.0.0.0
+      - ENVIRONMENT=DEV
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+    depends_on:
+      - redis
+    restart: unless-stopped
