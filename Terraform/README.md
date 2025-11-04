@@ -6,7 +6,7 @@ This project provisions a **production-ready GCP infrastructure** using modular 
 
 ## 🏗️ Architecture
 
-```
+```c
 ┌──────────────────────────────────────────────────────────────┐
 │                         VPC Network                          │
 ├───────────────────────┬──────────────────────────────────────┤
@@ -32,7 +32,7 @@ This project provisions a **production-ready GCP infrastructure** using modular 
 
 ### Modular Structure
 
-```
+```c
 Terraform/
 ├── main.tf                    # Root module orchestrating all components
 ├── variables.tf               # Variable definitions
@@ -339,14 +339,14 @@ gcloud artifacts docker images list \
 
 ### Network Isolation
 
-**Management Subnet (10.0.1.0/24)**
+#### Management Subnet (10.0.1.0/24)
 
 - ✅ Internet access via Cloud NAT (outbound only)
 - ✅ Houses management VM
 - ✅ IAP SSH access (35.235.240.0/20)
 - ✅ Can communicate with restricted subnet
 
-**Restricted Subnet (10.0.2.0/24)**
+#### Restricted Subnet (10.0.2.0/24)
 
 - ❌ No internet access
 - ✅ Houses GKE cluster
@@ -383,7 +383,7 @@ gcloud artifacts docker images list \
 
 ## 🔄 Module Dependencies
 
-```
+```c
 networking (independent)
     ↓
     ├─> gke (depends on: vpc_name, restricted_subnet_name)
