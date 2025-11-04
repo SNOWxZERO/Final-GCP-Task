@@ -4,6 +4,10 @@ This application will be used as a demo for DevOps Challenges.
 
 You should fork/clone this repository to use as a basis for the challenge.
 
+Link of the repo to copy in deplyment script (ready with docker file for image and yaml file for deployments on kubernates)
+
+<https://github.com/SNOWxZERO/DevOps-Challenge-Demo-Code-With-Docker-Ready.git>
+
 ## Demo application
 
 ### Requirements
@@ -58,7 +62,7 @@ You can run this application in Docker. There are two recommended ways:
 
 Examples:
 
-1) Start with docker-compose (recommended):
+- Start with docker-compose (recommended):
 
 ```bash
 # build images and start services (app + redis)
@@ -71,7 +75,7 @@ docker-compose up -d --build
 docker-compose down
 ```
 
-2) Using docker only (manual Redis) — creates a user network, starts Redis, builds and runs the app:
+- Using docker only (manual Redis) — creates a user network, starts Redis, builds and runs the app:
 
 ```bash
 # create a network for the containers
@@ -87,7 +91,7 @@ docker build -t devops-challenge-demo .
 docker run --rm --name demo_app --network demo-net -p 8888:8888 devops-challenge-demo
 ```
 
-3) Quick one-container run (if you have an external Redis and/or an `.env` file):
+- Quick one-container run (if you have an external Redis and/or an `.env` file):
 
 ```bash
 # use an env file (if present) to provide HOST/PORT/REDIS_* values

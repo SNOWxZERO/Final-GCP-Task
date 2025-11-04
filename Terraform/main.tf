@@ -3,7 +3,7 @@ terraform {
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = "~> 5.0"
+      version = "~> 6.0"
     }
   }
 }
@@ -13,283 +13,53 @@ provider "google" {
   region  = var.region
 }
 
-# VPC Network
-resource "google_compute_network" "vpc" {
-  name                    = "${var.prefix}-vpc"
-  auto_create_subnetworks = false
-  routing_mode            = "REGIONAL"
+# Networking Module
+module "networking" {
+  source = "./modules/networking"
+  
+  prefix                   = var.prefix
+  region                   = var.region
+  management_subnet_cidr   = var.management_subnet_cidr
+  restricted_subnet_cidr   = var.restricted_subnet_cidr
+  gke_pods_cidr            = var.gke_pods_cidr
+  gke_services_cidr        = var.gke_services_cidr
 }
 
-# Management Subnet
-resource "google_compute_subnetwork" "management" {
-  name          = "${var.prefix}-management-subnet"
-  ip_cidr_range = var.management_subnet_cidr
-  region        = var.region
-  network       = google_compute_network.vpc.id
+# GKE Module
+module "gke" {
+  source = "./modules/gke"
   
-  private_ip_google_access = true
+  prefix                   = var.prefix
+  project_id               = var.project_id
+  region                   = var.region
+  vpc_name                 = module.networking.vpc_name
+  restricted_subnet_name   = module.networking.restricted_subnet_name
+  management_subnet_cidr   = var.management_subnet_cidr
+  gke_master_cidr          = var.gke_master_cidr
+  machine_type             = var.gke_machine_type
+  node_count               = var.gke_node_count
+  use_preemptible_nodes    = var.use_preemptible_nodes
+  node_disk_size_gb        = var.gke_node_disk_size_gb
 }
 
-# Restricted Subnet (No internet access)
-resource "google_compute_subnetwork" "restricted" {
-  name          = "${var.prefix}-restricted-subnet"
-  ip_cidr_range = var.restricted_subnet_cidr
-  region        = var.region
-  network       = google_compute_network.vpc.id
+# Compute Module (Management VM)
+module "compute" {
+  source = "./modules/compute"
   
-  private_ip_google_access = true
-  
-  secondary_ip_range {
-    range_name    = "gke-pods"
-    ip_cidr_range = var.gke_pods_cidr
-  }
-  
-  secondary_ip_range {
-    range_name    = "gke-services"
-    ip_cidr_range = var.gke_services_cidr
-  }
+  prefix                   = var.prefix
+  project_id               = var.project_id
+  zone                     = var.zone
+  vpc_name                 = module.networking.vpc_name
+  management_subnet_name   = module.networking.management_subnet_name
+  machine_type             = var.vm_machine_type
+  # Because of the dependency on the GKE cluster in the deployment script
+  depends_on                = [module.gke]
 }
 
-# Cloud Router for NAT (Management subnet only)
-resource "google_compute_router" "router" {
-  name    = "${var.prefix}-router"
-  region  = var.region
-  network = google_compute_network.vpc.id
-}
-
-# NAT Gateway for Management Subnet
-resource "google_compute_router_nat" "nat" {
-  name                               = "${var.prefix}-nat"
-  router                             = google_compute_router.router.name
-  region                             = var.region
-  nat_ip_allocate_option             = "AUTO_ONLY"
-  source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
+# Artifact Registry Module
+module "artifact_registry" {
+  source = "./modules/artifact-registry"
   
-  subnetwork {
-    name                    = google_compute_subnetwork.management.id
-    source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
-  }
-}
-
-# Firewall rule: Allow SSH from IAP
-resource "google_compute_firewall" "allow_iap_ssh" {
-  name    = "${var.prefix}-allow-iap-ssh"
-  network = google_compute_network.vpc.name
-
-  allow {
-    protocol = "tcp"
-    ports    = ["22"]
-  }
-
-  source_ranges = ["35.235.240.0/20"] # IAP IP range
-  target_tags   = ["private-vm"]
-}
-
-# Firewall rule: Allow internal communication
-resource "google_compute_firewall" "allow_internal" {
-  name    = "${var.prefix}-allow-internal"
-  network = google_compute_network.vpc.name
-
-  allow {
-    protocol = "tcp"
-    ports    = ["0-65535"]
-  }
-
-  allow {
-    protocol = "udp"
-    ports    = ["0-65535"]
-  }
-
-  allow {
-    protocol = "icmp"
-  }
-
-  source_ranges = [
-    var.management_subnet_cidr,
-    var.restricted_subnet_cidr,
-    var.gke_pods_cidr,
-    var.gke_services_cidr
-  ]
-}
-
-# Firewall rule: Allow health checks for load balancer
-resource "google_compute_firewall" "allow_health_check" {
-  name    = "${var.prefix}-allow-health-check"
-  network = google_compute_network.vpc.name
-
-  allow {
-    protocol = "tcp"
-  }
-
-  source_ranges = ["35.191.0.0/16", "130.211.0.0/22"] # GCP health check ranges
-  target_tags   = ["gke-node"]
-}
-
-# Service Account for GKE Nodes
-resource "google_service_account" "gke_sa" {
-  account_id   = "${var.prefix}-gke-sa"
-  display_name = "GKE Node Service Account"
-}
-
-# IAM roles for GKE Service Account
-resource "google_project_iam_member" "gke_sa_roles" {
-  for_each = toset([
-    "roles/logging.logWriter",
-    "roles/monitoring.metricWriter",
-    "roles/monitoring.viewer",
-    "roles/artifactregistry.reader"
-  ])
-  
-  project = var.project_id
-  role    = each.value
-  member  = "serviceAccount:${google_service_account.gke_sa.email}"
-}
-
-# Private GKE Cluster
-resource "google_container_cluster" "primary" {
-  name     = "${var.prefix}-gke-cluster"
-  location = var.region
-  
-  # We can't create a cluster with no node pool defined, but we want to only use
-  # separately managed node pools. So we create the smallest possible default
-  # node pool and immediately delete it.
-  remove_default_node_pool = true
-  initial_node_count       = 1
-  
-  network    = google_compute_network.vpc.name
-  subnetwork = google_compute_subnetwork.restricted.name
-  
-  # Private cluster configuration
-  private_cluster_config {
-    enable_private_nodes    = true
-    enable_private_endpoint = true
-    master_ipv4_cidr_block  = var.gke_master_cidr
-  }
-  
-  # IP allocation for pods and services
-  ip_allocation_policy {
-    cluster_secondary_range_name  = "gke-pods"
-    services_secondary_range_name = "gke-services"
-  }
-  
-  # Master authorized networks (Management subnet only)
-  master_authorized_networks_config {
-    cidr_blocks {
-      cidr_block   = var.management_subnet_cidr
-      display_name = "Management Subnet"
-    }
-  }
-  
-  # Workload Identity
-  workload_identity_config {
-    workload_pool = "${var.project_id}.svc.id.goog"
-  }
-  
-  # Maintenance window
-  maintenance_policy {
-    daily_maintenance_window {
-      start_time = "03:00"
-    }
-  }
-}
-
-# GKE Node Pool
-resource "google_container_node_pool" "primary_nodes" {
-  name       = "${var.prefix}-node-pool"
-  location   = var.region
-  cluster    = google_container_cluster.primary.name
-  node_count = var.gke_node_count
-  
-  node_config {
-    preemptible  = var.use_preemptible_nodes
-    machine_type = var.gke_machine_type
-    # Reduce default boot disk size to limit regional SSD quota usage
-    disk_size_gb = var.gke_node_disk_size_gb
-    # Use standard persistent disk to avoid SSD_TOTAL_GB quota usage
-    disk_type    = "pd-standard"
-    
-    service_account = google_service_account.gke_sa.email
-    oauth_scopes = [
-      "https://www.googleapis.com/auth/cloud-platform"
-    ]
-    
-    tags = ["gke-node", "${var.prefix}-gke-node"]
-    
-    metadata = {
-      disable-legacy-endpoints = "true"
-    }
-    
-    workload_metadata_config {
-      mode = "GKE_METADATA"
-    }
-  }
-  
-  management {
-    auto_repair  = true
-    auto_upgrade = true
-  }
-}
-
-# Artifact Registry Repository
-resource "google_artifact_registry_repository" "repo" {
-  location      = var.region
-  repository_id = "${var.prefix}-docker-repo"
-  description   = "Private Docker repository"
-  format        = "DOCKER"
-}
-
-# Private VM Instance in Management Subnet
-resource "google_compute_instance" "private_vm" {
-  name         = "${var.prefix}-management-vm"
-  machine_type = var.vm_machine_type
-  zone         = var.zone
-
-  boot_disk {
-    initialize_params {
-      image = "debian-cloud/debian-11"
-      size  = 20
-    }
-  }
-
-  network_interface {
-    network    = google_compute_network.vpc.name
-    subnetwork = google_compute_subnetwork.management.name
-    # No external IP - private VM
-  }
-
-  service_account {
-    email  = google_service_account.vm_sa.email
-    scopes = ["cloud-platform"]
-  }
-
-  metadata_startup_script = <<-EOF
-    #!/bin/bash
-    apt-get update
-    apt-get install -y kubectl google-cloud-sdk-gke-gcloud-auth-plugin docker.io
-    
-    
-    # Install gcloud components
-    gcloud components install kubectl gke-gcloud-auth-plugin --quiet
-  EOF
-
-  tags = ["private-vm"]
-}
-
-# Service Account for VM
-resource "google_service_account" "vm_sa" {
-  account_id   = "${var.prefix}-vm-sa"
-  display_name = "Management VM Service Account"
-}
-
-# IAM roles for VM Service Account
-resource "google_project_iam_member" "vm_sa_roles" {
-  for_each = toset([
-    "roles/container.developer",
-    "roles/artifactregistry.writer",
-    "roles/storage.objectViewer"
-  ])
-  
-  project = var.project_id
-  role    = each.value
-  member  = "serviceAccount:${google_service_account.vm_sa.email}"
+  prefix = var.prefix
+  region = var.region
 }
